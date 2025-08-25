@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LIDAR SLAM và ICP </title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/openseadragon.min.js"></script>
+    <style>
+        .stream-container {
+            background-color:#E2D3F4;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        }
+        .stop{
+            text-align: center;
+            background-color:hotpink;
+            color:white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+        }
+        .continue,.zoomIn,.zoomOut,.addpoint{
+            text-align: center;
+            background-color:rgb(28, 211, 49);
+            color:white;
+            padding: 10px 20px;
+            border: 5px;
+            border-radius: 10px;
+        }
+        .takePicture{
+            text-align: center;
+            background-color:yellowgreen;
+            color:white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 10px;
+        }
+        .takePicture:hover,.addpoint:hover{
+            background-color:rgb(2, 238, 156);
+            transform: scale(1.1);;
+        }
+        .stop:hover{
+            background-color:red;
+            transform: scale(0.9);;
+        }
+        .continue:hover{
+            background-color:green;
+            transform: scale(1.1);
+        }
+      .zoomIn:hover,.zoomOut:hover {
+        background-color: darkgreen;
+        transform: scale(1.1);
+      }
+      .controls-sidebar {
+        max-height: calc(100vh - 80px);
+        overflow-y: auto;
+       }
+    
+        canvas.overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen bg-[#96D6FF] text-gray-800 font-sans">
+
+    <header class="flex-shrink-0 bg-white/30 shadow-md">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <h1 style="color:orange" class="text-2xl font-bold">LiDAR SLAM and ICP Visualization</h1>
+            <p id="status-message" class="text-lg text-blue-800 font-semibold h-6"></p>
+            <p id="rmse-display" class="text-lg text-yellow-600 font-semibold h-6"></p>
+            <p id="distance-display" class="text-lg text-green-600 font-semibold h-6"></p>
+        </div>
+    </header>
+
+
+    <main class="flex-grow flex flex-row gap-4 p-4 overflow-hidden">
+        <div id="mapViewer" class="flex-grow h-full rounded-lg shadow-lg bg-[#333] relative"></div>
+        
+   
+        <aside class="flex-shrink-0 w-72 flex flex-col space-y-4 controls-sidebar">
+  
+       
+
+            <div class="p-4 rounded-lg shadow flex flex-col space-y-3" style="background-color: rgba(255,255,255,0.3);">
+                <h3 class="text-lg font-semibold mb-2 text-gray-800 text-center">Điều khiển</h3>
+       
+
+                <button id="stop-button" class="stop w-full" onclick="stopStream()">❌ Dừng</button>
+                <button id="continue-button" class="continue w-full" onclick="resumeStream()">✅ Tiếp tục</button>
+                <button id="take-picture-button" class="takePicture w-full" onclick="takePicture()">📷 Chụp Ảnh</button>
+                <button id="add-point-button" class="addpoint w-full" onclick="addPointOfInterest()">📍 Thêm Điểm </button>
+            </div>
+
+            <div id="camera-info-panel" class="p-4 rounded-lg shadow flex-col space-y-2" style="background-color: rgba(255,255,255,0.3); display: none;">
+                <h3 class="text-lg font-semibold mb-2 text-gray-800 text-center">Thông số Pallet</h3>
+                <p id="pallet-angle" class="text-sm"></p>
+                <p id="camera-angle" class="text-sm"></p>
+                <p id="pallet-distance" class="text-sm"></p>
+                <p id="pallet-deviation" class="text-sm"></p>
+                <p id="pallet-direction" class="text-sm font-bold text-center"></p>
+            </div>
+
+
+            <div class="p-4 rounded-lg shadow flex flex-col space-y-3" style="background-color: rgba(255,255,255,0.3);">
+                <h3 class="text-lg font-semibold mb-2 text-gray-800 text-center">Lưu bản đồ</h3>
+                <input type="text" id="filename-input" placeholder="nhap_ten_ban_do" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 bg-white text-gray-700">
+                <select id="filetype-select" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 bg-white text-gray-700">
+                    <option value=".png">.png</option>
+                    <option value=".jpg">.jpg</option>
+                    <option value=".npy">.npy</option>
+                    <option value=".pcd">.pcd</option>
+                </select>
+                <button id="save-map-button" class="takePicture w-full" style="background-color: #8A2BE2;" onclick="saveMap()">💾 Lưu Bản Đồ</button>
+            </div>
+  
+            <div class="p-4 rounded-lg shadow flex flex-col space-y-3" style="background-color: rgba(255,255,255,0.3);">
+                <h3 class="text-lg font-semibold mb-2 text-gray-800 text-center">Chọn Điểm </h3>
+                <select id="poi-select" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 bg-white text-gray-700">
+                    <option value="">-- Chọn điểm để hiển thị --</option>
+                </select>
+                <button id="show-poi-button" class="continue w-full" onclick="showSelectedPoint()">Hiển Thị Điểm</button>
+                <button id="hide-poi-button" class="stop w-full" onclick="hideAllSelectedPoints()" style="display: none;">Ẩn Điểm Đã Chọn</button>
+            </div>
+
+            <div class="p-4 rounded-lg shadow flex flex-col space-y-3" style="background-color: rgba(255,255,255,0.3);">
+                <h3 class="text-lg font-semibold mb-2 text-gray-800 text-center">Hiển thị bản đồ từ file</h3>
+                <select id="saved-map-select" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 bg-white text-gray-700">
+                    <option value="">-- Chọn file --</option>
+                </select>
+                <button id="show-map-button" class="continue w-full" onclick="showSavedMap()">👁️ Hiển thị</button>
+                <button id="hide-map-button" class="stop w-full" onclick="hideSavedMap()" style="display: none;">Ẩn Bản Đồ</button>
+                <button id="toggle-points-button" class="takePicture w-full" style="background-color: #FFA500;" onclick="togglePoints()">Ẩn Điểm</button>
+
+            </div>
+      
+        </div>
+    </div>
+    <p id="status-message" class="mt-4 text-lg text-blue-800 font-semibold"></p>
+
+<script>
+    const statusMessage = document.getElementById('status-message');
+    const mapViewerElement = document.getElementById('mapViewer');
+    const savedMapSelect = document.getElementById('saved-map-select');
+
+const viewer = OpenSeadragon({
+    id: "mapViewer",
+    prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/3.1.0/images/",
+    tileSources: {
+        type: 'image',
+        url: '/map_image',
+        buildPyramid: false
+    },
+    animationTime: 0.5,
+    blendTime: 0.1,
+    constrainDuringPan: true,
+    maxZoomPixelRatio: 2,
+    minZoomImageRatio: 0.5,
+    visibilityRatio: 1,
+    zoomPerScroll: 1.15,
+   
+    showZoomControl:      true,
+    showHomeControl:      true,
+    showFullPageControl:  true  
+});
+
+    let pointsVisible = true;
+
+    function togglePoints() {
+        pointsVisible = !pointsVisible;
+        const btn = document.getElementById('toggle-points-button');
+        btn.textContent = pointsVisible ? 'Ẩn Điểm' : 'Hiện Điểm';
+        redrawAllPoints();
+    }
+
+  
+    let overlayCanvas = null;
+    let ctx = null;
+
+    // Các biến trạng thái
+    let globalMapPoints = []; // Đổi tên từ latestScanPoints để rõ nghĩa hơn
+    let robotPose = null; 
+    let pointsOfInterest = [];
+    let selectedPointsToDisplay = []; // Mảng chứa ID của các điểm được chọn để hiển thị
+    let eventSource; 
+    let mapRefreshInterval = null; 
+
+
+    function setupOverlay() {
+        if (overlayCanvas) {
+            overlayCanvas.remove();
+        }
+        overlayCanvas = document.createElement('canvas');
+        overlayCanvas.classList.add('overlay');
+        viewer.container.appendChild(overlayCanvas);
+        ctx = overlayCanvas.getContext('2d');
+
+        redrawAllPoints();
+    }
+
+
+    function redrawAllPoints() {
+
+        if (!overlayCanvas || !ctx) {
+            return;
+        }
+        const p = viewer.viewport.getBounds();
+        const { x, y, width, height } = viewer.viewport.viewportToViewerElementRectangle(p);
+
+        overlayCanvas.width = width;
+        overlayCanvas.height = height;
+        overlayCanvas.style.left = `${x}px`;
+        overlayCanvas.style.top = `${y}px`;
+        overlayCanvas.style.transformOrigin = `top left`;
+        overlayCanvas.style.transform = `scale(${viewer.viewport.getContainerSize().x / width})`;
+        
+        ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (!pointsVisible) return; // Nếu đang ẩn, không vẽ gì
+
+        const zoom = viewer.viewport.getZoom(true);
+        const pointRadius = Math.max(0.5, 1.5 * zoom / viewer.viewport.getMaxZoom());
+
+        // Vẽ các điểm được chọn để hiển thị dưới dạng chấm tròn
+        ctx.fillStyle = "rgba(255, 20, 147, 1)"; // Màu hồng đậm (Deep Pink)
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        selectedPointsToDisplay.forEach(pointId => {
+            const pointToHighlight = pointsOfInterest.find(p => p.id === pointId);
+            if (pointToHighlight) {
+                const [px, py] = pointToHighlight.pos_px;
+                const osdPoint = viewer.viewport.imageToViewerElementCoordinates(new OpenSeadragon.Point(px, py));
+                
+                // Vẽ chấm tròn
+                ctx.beginPath();
+                ctx.arc(osdPoint.x, osdPoint.y, 8, 0, 2 * Math.PI); // Bán kính 8
+                ctx.fill();
+                ctx.stroke();
+            }
+        });
+     
+        ctx.fillStyle = "rgba(255, 0, 255, 1.2)"; 
+        // Tối ưu hóa: Sử dụng fillRect thay vì arc để vẽ hàng nghìn điểm nhanh hơn.
+        const pointSize = Math.max(1, 2.5 * zoom / viewer.viewport.getMaxZoom());
+        globalMapPoints.forEach(([px, py]) => { // px, py là tọa độ pixel trên ảnh gốc
+            const point = viewer.viewport.imageToViewerElementCoordinates(new OpenSeadragon.Point(px, py));
+            // Vẽ một hình vuông nhỏ. Nhanh hơn đáng kể so với vẽ hình tròn.
+            ctx.fillRect(point.x - pointSize / 2, point.y - pointSize / 2, pointSize, pointSize);
+        });
+
+        // Vẽ robot (hình chữ nhật có mũi tên)
+        if (robotPose) {
+            const robotCenter = viewer.viewport.imageToViewerElementCoordinates(new OpenSeadragon.Point(robotPose.x, robotPose.y));
+            const distanceToTarget = parseFloat(document.getElementById('distance-display').textContent.replace('Khoảng cách tới mục tiêu: ', '').replace(' mm', ''));
+            const robotEnd = viewer.viewport.imageToViewerElementCoordinates(new OpenSeadragon.Point(robotPose.ex, robotPose.ey));
+
+            const angle = Math.atan2(robotEnd.y - robotCenter.y, robotEnd.x - robotCenter.x);
+            const robotWidth = 12; // pixels
+            const robotHeight = 20; // pixels
+
+               ctx.save(); // Lưu trạng thái canvas hiện tại
+            ctx.translate(robotCenter.x, robotCenter.y);
+            ctx.rotate(angle);
+            ctx.fillStyle = "rgba(0, 100, 255, 0.9)";
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 1.5;
+            ctx.fillRect(-robotHeight / 2, -robotWidth / 2, robotHeight, robotWidth);
+            ctx.strokeRect(-robotHeight / 2, -robotWidth / 2, robotHeight, robotWidth);
+
+
+            if (distanceToTarget <= 1000 && !isNaN(distanceToTarget)) {
+                // Vẽ hai đường thẳng song song
+                
+                const forkOffset = 8; // Khoảng cách giữa hai càng
+                ctx.strokeStyle = "red";
+                ctx.lineWidth = 3;
+
+                ctx.beginPath();
+                ctx.moveTo(robotHeight / 2, -forkOffset / 2);
+                ctx.lineTo(robotHeight / 2 + 10, -forkOffset / 2); // Độ dài càng
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(robotHeight / 2, forkOffset / 2);
+                ctx.lineTo(robotHeight / 2 + 10, forkOffset / 2); // Độ dài càng
+                ctx.stroke();
+            } else {
+               // Vẽ mũi tên màu đỏ thay vì màu trắng
+               ctx.fillStyle = "rgba(255, 0, 0, 1)"; // Màu đỏ
+                ctx.beginPath();
+                ctx.moveTo(robotHeight / 2, 0); // Đỉnh mũi tên
+                ctx.lineTo(robotHeight / 2 - 8, -5); // Góc trên
+                ctx.lineTo(robotHeight / 2 - 8, 5);  // Góc dưới
+                ctx.closePath(); // Nối điểm cuối về điểm đầu để tạo thành hình tam giác
+                ctx.fill();
+            }
+             ctx.restore();
+           }
+    }
+
+    viewer.addHandler('open', setupOverlay); 
+    viewer.addHandler('animation', redrawAllPoints);
+    viewer.addHandler('resize', redrawAllPoints);
+    
+    function startEventStream() {
+
+        if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
+            eventSource.close();
+        }
+        if (mapRefreshInterval) {
+            clearInterval(mapRefreshInterval);
+        }
+
+        // Reset các biến trạng thái
+        globalMapPoints = [];
+        robotPose = null;
+
+        // Bắt đầu luồng nhận dữ liệu vị trí robot và tia quét mới nhất
+        eventSource = new EventSource('/points_stream');
+        eventSource.onmessage = function(event) {
+         try {
+            const data = JSON.parse(event.data);
+            
+            // Xóa tất cả các điểm cũ và thay thế bằng điểm mới nhất
+            if (data.points && Array.isArray(data.points)) {
+                globalMapPoints = [...data.points];
+            } else if (data.new_points && Array.isArray(data.new_points)) {
+                globalMapPoints = [...data.new_points];
+            } else {
+                // Có thể thêm xử lý lỗi hoặc thông báo nếu dữ liệu không có điểm hợp lệ
+                console.warn("Gói tin không chứa dữ liệu điểm hợp lệ.");
+            }
+   
+
+                if (data.pose) {
+                    robotPose = data.pose;
+                }
+
+                const distanceDisplay = document.getElementById('distance-display');
+                if (data.distance) {
+                    distanceDisplay.textContent = `Khoảng cách tới mục tiêu: ${data.distance} mm`;
+                } else if (distanceDisplay.textContent) {
+                    distanceDisplay.textContent = ''; // Xóa nếu không có dữ liệu
+                }
+
+                // Cập nhật RMSE
+                const rmseDisplay = document.getElementById('rmse-display');
+                if (data.rmse) {
+                    rmseDisplay.textContent = `ICP RMSE: ${data.rmse}`;
+                } else if (rmseDisplay.textContent) {
+                    rmseDisplay.textContent = '';
+                }
+
+                // Cập nhật thông tin camera/pallet
+                const cameraPanel = document.getElementById('camera-info-panel');
+                if (data.camera_data) {
+                    document.getElementById('pallet-angle').textContent = `Góc nghiêng Pallet: ${data.camera_data.angle_deg.toFixed(2)}°`;
+                    // Hiển thị góc lệch so với hướng thẳng (180 độ)
+                    document.getElementById('camera-angle').textContent = `Góc lệch Camera: ${(180 - data.camera_data.angle_horizontal_deg).toFixed(2)}°`;
+                    document.getElementById('pallet-distance').textContent = `Khoảng cách: ${data.camera_data.mean_depth.toFixed(2)} mm`;
+                    document.getElementById('pallet-deviation').textContent = `Độ lệch ngang: ${data.camera_data.dis_lech.toFixed(2)} mm`;
+                    document.getElementById('pallet-direction').textContent = `Hướng: ${data.camera_data.chieu_lech}`;
+                    cameraPanel.style.display = 'flex'; // Hiển thị panel
+                } else {
+                    cameraPanel.style.display = 'none'; // Ẩn panel nếu không có dữ liệu
+                }
+
+                redrawAllPoints(); 
+            } catch (e) {
+                console.error("Lỗi xử lý dữ liệu stream:", e);
+            }
+        };
+
+    }
+
+    // --- CÁC HÀM ĐIỀU KHIỂN ---
+    function showStatus(message, duration = 3000) {
+        statusMessage.textContent = message;
+        if (duration > 0) {
+            setTimeout(() => { statusMessage.textContent = ''; }, duration);
+        }
+    }
+
+    function stopStream() {
+        // Dừng luồng nhận điểm
+        if (eventSource) {
+            eventSource.close();
+        }
+        // Dừng làm mới ảnh nền
+        if (mapRefreshInterval) {
+            clearInterval(mapRefreshInterval);
+            mapRefreshInterval = null;
+        }
+        fetch('/stop_stream').then(r => r.json()).then(data => showStatus(data.message));
+    }
+
+    function resumeStream() {
+
+        fetch('/resume_stream').then(r => r.json()).then(data => showStatus(data.message));
+
+        startEventStream();
+    }
+
+    function takePicture() {
+        fetch('/save_frame').then(r => r.json()).then(data => {
+            if (data.status === 'success') showStatus(`Ảnh đã được lưu: ${data.filename}`);
+            else showStatus(`Lỗi: ${data.message}`);
+        });
+    }
+
+    function addPointOfInterest() {
+        showStatus('Đang thêm điểm...', 0);
+        fetch('/add_point', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showStatus('✅ Đã thêm điểm thành công!');
+                    fetchPointsOfInterest(); // Tải lại danh sách để cập nhật ngay
+                } else {
+                    showStatus(`❌ Lỗi: ${data.message}`);
+                }
+            })
+            .catch(err => {
+                showStatus('❌ Lỗi kết nối server khi thêm điểm.');
+                console.error(err);
+            });
+    }
+
+    function fetchPointsOfInterest() {
+        fetch('/get_points_of_interest')
+            .then(response => response.json())
+            .then(data => {
+                if (data.points) {
+                    pointsOfInterest = data.points;
+                    // Cập nhật dropdown
+                    const poiSelect = document.getElementById('poi-select');
+                    poiSelect.innerHTML = '<option value="">-- Chọn điểm để hiển thị --</option>'; // Xóa các lựa chọn cũ
+                    pointsOfInterest.forEach(point => {
+                        const option = document.createElement('option');
+                        option.value = point.id;
+                        option.textContent = point.name;
+                        poiSelect.appendChild(option);
+                    });
+                    redrawAllPoints(); // Vẽ lại canvas với các điểm mới
+                }
+            })
+            .catch(err => console.error("Không thể tải điểm :", err));
+    }
+
+    function showSelectedPoint() {
+        const poiSelect = document.getElementById('poi-select');
+        const selectedId = parseInt(poiSelect.value, 10);
+
+        if (isNaN(selectedId)) {
+            showStatus("Vui lòng chọn một điểm từ danh sách.");
+            return;
+        }
+
+        // Gửi yêu cầu tới server để đặt điểm này làm mục tiêu
+        fetch('/set_active_target', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: selectedId })
+        })
+        .then(response => response.json())
+        .then(data => console.log(data.message));
+
+        // Thêm ID vào danh sách hiển thị nếu chưa có
+        if (!selectedPointsToDisplay.includes(selectedId)) {
+            selectedPointsToDisplay.push(selectedId);
+            redrawAllPoints();
+            document.getElementById('hide-poi-button').style.display = 'block';
+            showStatus(`Đã hiển thị ${poiSelect.options[poiSelect.selectedIndex].text}`);
+        } else {
+            showStatus("Điểm này đã được hiển thị.");
+        }
+    }
+
+    function hideAllSelectedPoints() {
+        // Gửi yêu cầu tới server để hủy mục tiêu
+        fetch('/set_active_target', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: null })
+        })
+        .then(response => response.json())
+        .then(data => console.log(data.message));
+
+        selectedPointsToDisplay = [];
+        redrawAllPoints();
+        document.getElementById('hide-poi-button').style.display = 'none';
+        showStatus("Đã ẩn tất cả các điểm được chọn.");
+    }
+
+    function saveMap() {
+        const filenameInput = document.getElementById('filename-input');
+        const filetype = document.getElementById('filetype-select').value;
+        const filenameBase = filenameInput.value.trim() || filenameInput.placeholder;
+
+        if (!filenameBase) {
+            showStatus('Lỗi: Vui lòng nhập tên file.');
+            return;
+        }
+
+        const fullFilename = filenameBase + filetype;
+        showStatus(`Đang lưu ${fullFilename}...`, 0);
+
+        fetch(`/save_map?filename=${encodeURIComponent(fullFilename)}`)
+            .then(response => response.json())
+            .then(data => {
+                showStatus(data.message);
+                if (data.status === 'success') {
+                    fetchSavedMaps(); // Tải lại danh sách file
+                }
+            });
+    }
+
+    function fetchSavedMaps() {
+        fetch('/list_saved_files')
+            .then(response => response.json())
+            .then(data => {
+                savedMapSelect.innerHTML = '<option value="">-- Chọn file --</option>';
+                if (data.files) {
+                    data.files.forEach(file => {
+                        const option = document.createElement('option');
+                        option.value = file;
+                        option.textContent = file;
+                        savedMapSelect.appendChild(option);
+                    });
+                }
+            });
+    }
+
+    // *** HÀM QUAN TRỌNG NHẤT ***
+    async function showSavedMap() {
+        const pngFilename = savedMapSelect.value;
+        if (!pngFilename) {
+            showStatus('Vui lòng chọn một file.');
+            return;
+        }
+
+        // 1. Dừng luồng thời gian thực và làm mới bản đồ
+        if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
+            eventSource.close();
+        }
+        if (mapRefreshInterval) {
+            clearInterval(mapRefreshInterval);
+            mapRefreshInterval = null;
+        }
+
+        robotPose = null; // Xóa vị trí robot cũ
+        globalMapPoints = []; // Xóa các điểm quét mới nhất
+        redrawAllPoints(); // Vẽ lại canvas trống
+        showStatus(`Đang tải bản đồ ${pngFilename}...`, 0);
+
+       
+        viewer.open({
+            type: 'image',
+            url: `/get_map_image/${pngFilename}`,
+            buildPyramid: false
+        });
+        
+        try {
+            const serverUpdateResponse = await fetch('/load_map_for_imshow', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: pngFilename }),
+            });
+            const serverUpdateData = await serverUpdateResponse.json();
+            if (serverUpdateData.status === 'success') {
+                console.log("Server successfully updated its display.");
+                showStatus(`Đã tải bản đồ ${pngFilename}. SLAM vẫn chạy trong nền.`);
+            } else {
+                console.error("Server failed to update display:", serverUpdateData.message);
+                showStatus(`Lỗi server: ${serverUpdateData.message}`);
+            }
+
+            // Hiển thị/ẩn các nút phù hợp
+            document.getElementById('hide-map-button').style.display = 'block';
+            document.getElementById('show-map-button').style.display = 'none';
+            startEventStream();
+        } catch (error) {
+            console.error('Lỗi khi hiển thị bản đồ đã lưu:', error);
+            showStatus('Lỗi khi hiển thị bản đồ đã lưu.');
+        }
+    }
+
+
+   
+    function hideSavedMap() {
+        // Hàm này sẽ xử lý việc quay lại chế độ xem thời gian thực
+        resumeStream();
+        // Cập nhật giao diện nút bấm
+        document.getElementById('hide-map-button').style.display = 'none';
+        document.getElementById('show-map-button').style.display = 'block';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        fetchSavedMaps();
+        fetchPointsOfInterest(); // Tải các điểm đã lưu khi trang được mở
+        viewer.world.addHandler('add-item', () => redrawAllPoints());
+        startEventStream(); // Start stream on page load
+    });
+
+</script>
+</body>
+</html>

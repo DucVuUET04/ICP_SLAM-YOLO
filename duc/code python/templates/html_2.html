@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LIDAR SLAM và ICP </title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color:#96D6FF;
+            /* background-image:url("/static/img/download.jfif");;  */
+            
+        }
+        .stream-container {
+            background-color:#E2D3F4;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+        }
+        .stop{
+            text-align: center;
+            background-color:hotpink;
+            color:white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+        }
+        .continue,.zoomIn,.zoomOut{
+            text-align: center;
+            background-color:rgb(28, 211, 49);
+            color:white;
+            padding: 10px 20px;
+            border: 5px;
+            border-radius: 10px;
+        }
+        .takePicture{
+            text-align: center;
+            background-color:yellowgreen;
+            color:white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 10px;
+        }
+        .takePicture:hover{
+            background-color:rgb(2, 238, 156);
+            transform: scale(1.1);;
+        }
+        .stop:hover{
+            background-color:red;
+            transform: scale(0.9);;
+        }
+        .continue:hover{
+            background-color:green;
+            transform: scale(1.1);
+        }
+      .zoomIn:hover,.zoomOut:hover {
+        background-color: darkgreen;
+        transform: scale(1.1);
+      }
+      .selection-box {
+        position: absolute;
+        border: 2px dashed #FF00FF; /* Màu magenta sáng */
+        background-color: rgba(255, 0, 255, 0.2); /* Màu magenta trong suốt */
+        pointer-events: none; /* Để không cản trở sự kiện chuột */
+      }
+      .zooming-cursor, .zooming-cursor * {
+        /* Custom high-contrast crosshair cursor (white with black outline) */
+        cursor: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiI+PHBhdGggc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSI0IiBkPSJNMTYgMHYzMk0wIDE2aDMyIi8+PHBhdGggc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIiBkPSJNMTYgMHYzMk0wIDE2aDMyIi8+PC9zdmc+') 16 16, crosshair !important;
+      }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+    <h1 style="color:orange" class="text-3xl font-bold text-gray-800 mb-8">LiDAR SLAM and ICP Visualization</h1>
+    
+    <!-- Main Layout Container -->
+    <div class="flex flex-col md:flex-row gap-8 w-full max-w-screen-2xl px-4">
+
+        <!-- Streams Area -->
+        <div id="streams-grid" class="flex-grow grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Stream SLAM -->
+            <div id="slam-container" class="stream-container p-6">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4 text-center">Stream SLAM</h2>
+                <div id="slam-wrapper" class="relative overflow-hidden rounded-lg border border-gray-300 cursor-pointer">
+                    <img id="slam-stream-img" src="/video_feed" alt="SLAM Stream" class="w-full h-auto block" style="transform-origin: 0 0;">
+                </div>
+                <p class="mt-2 text-gray-600 text-center">Real-time SLAM map</p>
+            </div>
+            
+            <!-- Stream ICP -->
+            <div id="icp-container" class="stream-container p-6">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4 text-center">Stream ICP</h2>
+                <div id="icp-wrapper" class="relative overflow-hidden rounded-lg border border-gray-300 cursor-pointer">
+                    <img id="icp-stream-img" src="/icp_feed" alt="ICP Stream" class="w-full h-auto block" style="transform-origin: 0 0;">
+                </div>
+                <p class="mt-2 text-gray-600 text-center">Real-time ICP</p>
+            </div>
+        </div>
+
+        <!-- Vertical Controls Sidebar -->
+        <div class="flex-shrink-0 md:w-72 flex flex-col space-y-4">
+            <!-- View Toggles -->
+            <div class="p-4 rounded-lg shadow" style="background-color: rgba(255,255,255,0.3);">
+                <h3 class="text-lg font-semibold mb-3 text-gray-800 text-center">Tùy chọn hiển thị</h3>
+                <div class="space-y-2">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggle-slam" class="form-checkbox h-5 w-5 text-pink-600" checked onchange="toggleView()">
+                        <span class="ml-2 text-gray-700 font-medium">Hiển thị SLAM</span>
+                    </label>
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggle-icp" class="form-checkbox h-5 w-5 text-pink-600" checked onchange="toggleView()">
+                        <span class="ml-2 text-gray-700 font-medium">Hiển thị ICP</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="p-4 rounded-lg shadow flex flex-col space-y-3" style="background-color: rgba(255,255,255,0.3);">
+                <h3 class="text-lg font-semibold mb-2 text-gray-800 text-center">Điều khiển</h3>
+                <button id="stop-button" class="stop w-full" onclick="stopStream()">❌ Dừng</button>
+                <button id="continue-button" class="continue w-full" onclick="resumeStream()">✅ Tiếp tục</button>
+                <button id="take-picture-button" class="takePicture w-full" onclick="takePicture()">📷 Chụp Ảnh</button>
+                <button class="zoomIn w-full" onclick="activateZoomMode()">🔍 Phóng to Vùng chọn</button>
+                <button class="zoomOut w-full" onclick="resetZoom()">🔙 Reset Zoom</button>
+            </div>
+
+            <!-- Save Controls -->
+            <div class="p-4 rounded-lg shadow flex flex-col space-y-3" style="background-color: rgba(255,255,255,0.3);">
+                <h3 class="text-lg font-semibold mb-2 text-gray-800 text-center">Lưu bản đồ</h3>
+                <input type="text" id="filename-input" placeholder="nhap_ten_ban_do" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 bg-white text-gray-700">
+                <select id="filetype-select" class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 bg-white text-gray-700">
+                    <option value=".png">.png</option>
+                    <option value=".jpg">.jpg</option>
+                    <option value=".npy">.npy</option>
+                </select>
+                <button id="save-map-button" class="takePicture w-full" style="background-color: #8A2BE2;" onclick="saveMap()">💾 Lưu Bản Đồ</button>
+            </div>
+        </div>
+    </div>
+    <p id="status-message" class="mt-4 text-lg text-blue-800 font-semibold"></p>
+
+    <script>
+        const statusMessage = document.getElementById('status-message');
+        const slamContainer = document.getElementById('slam-container');
+        const icpContainer = document.getElementById('icp-container');
+        const streamsGrid = document.getElementById('streams-grid');
+        const slamImg = document.getElementById('slam-stream-img');
+        const slamWrapper = document.getElementById('slam-wrapper');
+        const icpImg = document.getElementById('icp-stream-img');
+        const icpWrapper = document.getElementById('icp-wrapper');
+
+        function toggleView() {
+            const showSlam = document.getElementById('toggle-slam').checked;
+            const showIcp = document.getElementById('toggle-icp').checked;
+            const isSingleView = (showSlam && !showIcp) || (!showSlam && showIcp);
+
+            slamContainer.style.display = showSlam ? 'block' : 'none';
+            icpContainer.style.display = showIcp ? 'block' : 'none';
+
+            // Chuyển đổi layout: 2 cột khi cả hai hiển thị, flex-center khi chỉ một hiển thị
+            streamsGrid.classList.toggle('md:grid-cols-2', showSlam && showIcp);
+            streamsGrid.classList.toggle('grid', showSlam && showIcp); // Đảm bảo là grid
+            streamsGrid.classList.toggle('flex', isSingleView);
+            streamsGrid.classList.toggle('justify-center', isSingleView);
+            slamContainer.classList.toggle('md:max-w-[70%]', isSingleView);
+            icpContainer.classList.toggle('md:max-w-[70%]', isSingleView);
+        }
+
+        function showStatus(message) {
+            statusMessage.textContent = message;
+            setTimeout(() => { statusMessage.textContent = ''; }, 3000);
+        }
+
+        function takePicture(){
+            fetch('/save_frame')
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data);
+                    showStatus('Ảnh đã được lưu thành công!');
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        function stopStream(){
+            fetch('/stop_stream')
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data);
+                    showStatus('Đã tạm dừng quá trình xử lý.');
+                });
+        }
+
+        function resumeStream(){
+            fetch('/resume_stream')
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data);
+                    showStatus('Đã tiếp tục quá trình xử lý.');
+                });
+        }
+
+        function saveMap() {
+            const filenameInput = document.getElementById('filename-input');
+            const filetypeSelect = document.getElementById('filetype-select');
+            const filenameBase = filenameInput.value.trim();
+            const filetype = filetypeSelect.value;
+
+            if (!filenameBase) {
+                showStatus('Lỗi: Vui lòng nhập tên file để lưu.');
+                filenameInput.focus();
+                return;
+            }
+
+            const fullFilename = filenameBase + filetype;
+       
+            fetch(`/save_map?filename=${encodeURIComponent(fullFilename)}`)
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data);
+                    showStatus(data.message || `Đã lưu bản đồ với tên: ${fullFilename}`);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showStatus('Lỗi: Không thể gửi yêu cầu lưu bản đồ.');
+                });
+        }
+
+        // --- REFINED ZOOM LOGIC ---
+        let isZoomingMode = false;
+        let isDragging = false;
+        let selectionBox = null;
+        let startCoords = { x: 0, y: 0 };
+        let activeWrapper = null; // Theo dõi wrapper nào đã bắt đầu zoom
+
+        function activateZoomMode() {
+            isZoomingMode = true;
+            document.body.classList.add('zooming-cursor');
+            showStatus('Chế độ phóng to đã bật. Kéo chuột trên ảnh để chọn vùng.');
+        }
+
+        function deactivateZoomMode() {
+            isZoomingMode = false;
+            isDragging = false; // Đảm bảo reset trạng thái kéo
+            document.body.classList.remove('zooming-cursor');
+            if (selectionBox) {
+                selectionBox.remove();
+                selectionBox = null;
+            }
+            // Dọn dẹp các listener toàn cục để tránh rò rỉ bộ nhớ
+            window.removeEventListener('mousemove', handleDrag);
+            window.removeEventListener('mouseup', handleDragEnd);
+            activeWrapper = null;
+        }
+
+        function resetZoom() {
+            slamImg.style.transform = 'scale(1) translate(0, 0)';
+            icpImg.style.transform = 'scale(1) translate(0, 0)';
+            deactivateZoomMode();
+            showStatus('Đã quay về chế độ xem ban đầu.');
+        }
+
+        function handleDragStart(e) {
+            if (!isZoomingMode) return;
+            e.preventDefault();
+
+            activeWrapper = this; // 'this' là wrapper đã kích hoạt sự kiện
+            isDragging = true;
+            
+            const rect = activeWrapper.getBoundingClientRect();
+            startCoords = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+            if (selectionBox) selectionBox.remove();
+            selectionBox = document.createElement('div');
+            selectionBox.className = 'selection-box';
+            activeWrapper.appendChild(selectionBox);
+            
+            selectionBox.style.left = `${startCoords.x}px`;
+            selectionBox.style.top = `${startCoords.y}px`;
+            selectionBox.style.width = '0px';
+            selectionBox.style.height = '0px';
+
+            // Gắn listener vào window để theo dõi chuột trên toàn màn hình
+            window.addEventListener('mousemove', handleDrag);
+            window.addEventListener('mouseup', handleDragEnd);
+        }
+
+        function handleDrag(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+
+            const rect = activeWrapper.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+
+            const width = Math.abs(currentX - startCoords.x);
+            const height = Math.abs(currentY - startCoords.y);
+            const left = Math.min(currentX, startCoords.x);
+            const top = Math.min(currentY, startCoords.y);
+
+            selectionBox.style.width = `${width}px`;
+            selectionBox.style.height = `${height}px`;
+            selectionBox.style.left = `${left}px`;
+            selectionBox.style.top = `${top}px`;
+        }
+
+        function handleDragEnd(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            
+            const rect = activeWrapper.getBoundingClientRect();
+            const endCoords = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+            const rectWidth = Math.abs(endCoords.x - startCoords.x);
+            const rectHeight = Math.abs(endCoords.y - startCoords.y);
+
+            // Hủy nếu vùng chọn quá nhỏ (coi như là click)
+            if (rectWidth < 10 || rectHeight < 10) {
+                deactivateZoomMode();
+                showStatus('Vùng chọn quá nhỏ. Đã hủy phóng to.');
+                return;
+            }
+
+            // --- CROP LOGIC: Make selection cover the entire view ---
+            const containerW = activeWrapper.clientWidth;
+            const containerH = activeWrapper.clientHeight;
+
+            // Calculate scale factor to make the selection cover the container
+            const scaleX = containerW / rectWidth;
+            const scaleY = containerH / rectHeight;
+            const scale = Math.max(scaleX, scaleY); // Use the LARGER scale to ensure the container is filled (cover/crop)
+
+            // Calculate translation to center the zoomed area
+            const selectionLeft = Math.min(startCoords.x, endCoords.x);
+            const selectionTop = Math.min(startCoords.y, endCoords.y);
+            
+            // Translate to bring the selection's top-left to origin, then shift to center it
+            const translateX = -selectionLeft * scale + (containerW - rectWidth * scale) / 2;
+            const translateY = -selectionTop * scale + (containerH - rectHeight * scale) / 2;
+
+            const transformValue = `scale(${scale}) translate(${translateX}px, ${translateY}px)`;
+            slamImg.style.transform = transformValue;
+            icpImg.style.transform = transformValue;
+
+            deactivateZoomMode();
+            showStatus(`Đã phóng to ${scale.toFixed(2)}x.`);
+        }
+
+        // Gắn sự kiện mousedown cho cả hai wrapper
+        slamWrapper.addEventListener('mousedown', handleDragStart);
+        icpWrapper.addEventListener('mousedown', handleDragStart);
+
+        // Initial call to set up the view based on default checked state
+        toggleView();
+        
+    </script>
+</body>
+</html>
