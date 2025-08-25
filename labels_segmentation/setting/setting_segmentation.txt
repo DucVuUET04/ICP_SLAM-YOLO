@@ -1,0 +1,6 @@
+folder_input C:\Xu_ly_anh\camera_data
+forder_output_obb C:\Xu_ly_anh\output
+forder_output_pose C:\Xu_ly_anh\output_pose
+forder_output_oject C:\Xu_ly_anh\output_oject
+resize 2
+anpha 3

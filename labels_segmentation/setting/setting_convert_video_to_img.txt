@@ -1,0 +1,4 @@
+time 0.1
+dinh_dang png
+path_video D:\4_tools\tools_cam_labels - Copy\video\loai_1.avi
+folder_output D:\4_tools\tools_cam_labels - Copy\loai_1\images

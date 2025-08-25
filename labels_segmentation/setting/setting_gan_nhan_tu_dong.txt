@@ -1,0 +1,2 @@
+folder_input D:\22_labels_segmentation\data_input_output\img_giac_all\data_1_va_2
+folder_output D:\22_labels_segmentation\data_input_output\img_giac_all\data_labels_1_va_2

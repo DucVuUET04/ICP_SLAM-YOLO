@@ -1,0 +1,2 @@
+image_folder C:\tupn\tools\labels_segmentation_exe\crop_img
+txt_folder C:\tupn\tools\labels_segmentation_exe\output_crop_img

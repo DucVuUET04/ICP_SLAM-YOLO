@@ -1,0 +1,6 @@
+src_img_folder D:\22_labels_segmentation\data_input_output\img_giac_all\data_1_va_2
+src_txt_folder D:\22_labels_segmentation\data_input_output\img_giac_all\data_labels_1_va_2
+dest_img_folder_80 D:\22_labels_segmentation\data_input_output\img_training_all\giac\train\images
+dest_txt_folder_80 D:\22_labels_segmentation\data_input_output\img_training_all\giac\train\labels
+dest_img_folder_20 D:\22_labels_segmentation\data_input_output\img_training_all\giac\val\images
+dest_txt_folder_20 D:\22_labels_segmentation\data_input_output\img_training_all\giac\val\labels
